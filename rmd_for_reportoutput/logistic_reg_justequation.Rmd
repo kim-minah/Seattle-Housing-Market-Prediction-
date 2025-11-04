@@ -1,0 +1,19 @@
+---
+title: "Visualizations"
+author: "Minah Kim"
+# date: ""
+output: pdf_document # type of document I'm using
+# pdf_document: outputs a pdf (requires LaTeX)
+# word_document: outputs a Word document
+# html_document: outputs an HTML 
+editor_options: 
+  chunk_output_type: console
+---
+
+
+$\hat{y}_{overbudget} = -14.26 +.02x_{Age} -.18x_{Bedrooms} + .17x_{Bathrooms} + .0009x_{SqftLiving} + .000008x_{SqftLot} -.79x_{Floors} + .37x_{Condition} + 1.21x_{Grade} + .0006x_{SqftLiving15} + 3.36I_{WaterfrontYes} + 1.04I_{ViewYes} -.25I_{BasementYes} + .53I_{RenovatedYes} - .14I_{SeasonSummer} - .39x_{Distance} + .0005x_{SqftlivingByFloors}$
+
+
+$\hat{y}_{age} = 109.9 + 0.00002x_{Price} + 2.16x_{Bedrooms}  - 16.17x_{Bathrooms} + 0.002x_{SqftLiving}+ 0.00002x_{SqftLot} - 9.12x_{Floors} + 9.31x_{Condition} - 8.31x_{Grade} + 0.002x_{SqftAbove} - 0.86x_{Distance}  - 0.003x_{SqftLiving15} - 0.00001x_{SqftLot15} - 9.73I_{WaterfrontYes} + 7.66I_{ViewYes}+ 3.97I_{BasementYes} + 3.07I_{RenovatedYes}- 0.25I_{SeasonSummer}$
+
+$\hat{y}_{age} = 109.9 + 0.00002x_{Price} + 2.17x_{Bedrooms}  - 16.18x_{Bathrooms} + 0.004x_{SqftLiving}+ 0.00001x_{SqftLot} - 8.80x_{Floors} + 9.23x_{Condition} - 8.21x_{Grade} +  - 0.86x_{Distance}  - 0.003x_{SqftLiving15} - 9.89I_{WaterfrontYes} + 7.46I_{ViewYes}+ 2.73I_{BasementYes} + 3.66I_{RenovatedYes}$

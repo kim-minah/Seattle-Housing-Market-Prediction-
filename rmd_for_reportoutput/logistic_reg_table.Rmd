@@ -1,0 +1,324 @@
+---
+title: "Visualizations"
+author: "Minah Kim"
+# date: ""
+output: pdf_document # type of document I'm using
+# pdf_document: outputs a pdf (requires LaTeX)
+# word_document: outputs a Word document
+# html_document: outputs an HTML 
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE,warning=FALSE,error=FALSE,cache=FALSE,fig.width=6, fig.height=5,tidy=TRUE) 
+```
+
+```{r, include=FALSE}
+
+
+
+#---------------#
+# Load packages #
+#---------------#
+library(tidyverse)
+library(car)
+library(gridExtra)
+library(psych)
+library(ROCR)
+library(GGally)
+library(leaps)
+library(ROCR)
+library(MASS)
+library(geosphere)
+library(xtable)
+library(psych)
+library(papaja)
+library(reshape2)
+library(kableExtra)
+
+#-----------------#
+# Set working dir #
+#-----------------#
+setwd("C:/Users/mk7kc/Desktop/DS/DS6021/Project2")
+
+#--------------#
+# Load in data #
+#--------------#
+dat <- read.csv('dat_final.csv')
+
+#--------------#
+# Examine data #
+#--------------#
+# Descriptives
+options(width=170,scipen = 99)
+describe(dat)
+str(dat)
+options(width=80)
+ #R gives us excess residual from a kurtosis of 3 (and low kurtosis not necessarily bad thing, high value means outliers
+# With log odds you can pursue transformations but with ungrouped data you can't really make any assumptions about how the distribution of your predictors will affect log odds, but you can try a before and after log transformation comparison and see if they improve predictability 
+
+#---------------------#
+# Data Transformation #
+#---------------------#
+dat$over_budget <- factor(ifelse(dat$over_budget=='no',0,1))
+dat$waterfront <- factor(ifelse(dat$waterfront=='no',0,1))
+dat$view <- factor(ifelse(dat$view=='no',0,1))
+dat$basement <- factor(ifelse(dat$basement=='no',0,1))
+dat$renovated <- factor(ifelse(dat$renovated=='no',0,1))
+dat$season <- factor(ifelse(dat$season=='non-summer',0,1))
+
+# Create distance var
+snlat <- 47.62
+snlong <- -122.23
+r = 3958.8
+distance <- c()
+for (x in 1:nrow(dat)){
+  d <- distHaversine(c(dat$long[x],dat$lat[x]),c(snlong,snlat),r=r)
+  distance <- append(distance,d)
+}
+dat$distance <- distance
+
+# Remove lat & long
+# -> when include lat, long as first order additive terms you're saying going more west/east/north/south will lead to a linear change in price so it's not a good proxy for location
+dat <- dat[,-c(11,12)]
+
+#-----------------------#
+# Split into Test/Train #
+#-----------------------#
+set.seed(206)
+sample <- sample.int(nrow(dat), floor(0.80*nrow(dat)),replace=F)
+test <- dat[-sample,]
+train <- dat[sample,]
+
+#-----------------------------#
+# Exploratory Model Selection #
+#-----------------------------#
+# Create intercept only model
+regnull <- glm(over_budget~1, data=train, family = 'binomial')
+# Create full model
+regfull <- glm(over_budget~.,data=train, family = 'binomial')
+
+# Forward selection
+#step(regnull, scope=list(lower=regnull, upper=regfull), direction = 'forward')
+# Everything but sqft_lot15
+
+# Backward elimination
+#step(regfull, scope=list(lower=regnull, upper=regfull), direction = 'backward')
+
+# Stepwise regression
+#step(regnull, scope=list(lower=regnull, upper=regfull), direction = 'both')
+
+# Run regsubsets()
+#allreg <- regsubsets(over_budget~., data = train, nbest = 1)
+#summary(allreg)
+
+# All automated search results are the same
+
+#----------------#
+# New Train Data #
+#----------------#
+train2 <- train[,-c(12)] # got rid of 'sqft_lot15' based on result from automated model search
+
+#------------------------#
+# Check for co-linearity #
+#------------------------#
+mod1 <- glm(over_budget~.,data=train2, family = 'binomial')
+
+# Correlation with the non-factor vars
+#options(width=120)
+cor(train2[,-c(2,12:17)]) # remove the categorical vars
+vif(mod1) 
+# sqft_above has a variance inflation factor greater than 10 and has a correlation with sqft_living of ~.88
+
+#----------------#
+# New Train Data #
+#----------------#
+# Get rid of sqft_above and keep sqft_living cause the best 1-predictor model selected based on R^2 when running regsubset() chose sqft_living as the predictor 
+# sqft_above: The square footage of the interior housing space that is above ground level
+# sqft_living: Square footage of the apartments interior living space
+train3 <- train2[,-c(10)]
+
+#-------------------------------#
+# Exploratory Model Selection 2 #
+#-------------------------------#
+# Create intercept only model
+regnull2 <- glm(over_budget~1, data=train3, family = 'binomial')
+# Create full model
+regfull2 <- glm(over_budget~.,data=train3, family = 'binomial')
+
+# Forward selection
+#step(regnull2, scope=list(lower=regnull2, upper=regfull2), direction = 'forward')
+#step(regfull2, scope=list(lower=regnull2, upper=regfull2), direction = 'backward')
+#allreg2 <- regsubsets(over_budget~., data = train3, nbest = 1)
+#summary(allreg2)
+
+# All variables included in automated search procedures
+
+#--------------------------#
+# Check for co-linearity 2 #
+#--------------------------#
+mod2 <- glm(over_budget~.,data=train3, family = 'binomial')
+
+# Check variance inflation
+vif(mod2) 
+# All are below 10
+
+#---------------------#
+# Logistic Regression #
+#---------------------#
+summary(mod2)
+# Wald test significant for all predictors -> cannot drop any predictors
+ 
+# Is the model useful -> likelihood ratio test
+# Compare null deviance (intercept only model) to residual deviance (full model)
+delta_gsquare = mod2$null.deviance - mod2$deviance
+1 - pchisq(delta_gsquare, 15)
+# We can reject the null and say that the full model is useful since the full model is preferable over the intercept-only model.
+
+# Full vs reduced models -> likelihood ratio test
+red_dat = train3[,-c(15)] # remove season
+mod_r <- glm(over_budget~., data = red_dat, family = "binomial")
+delta_gsquare2 <- mod_r$deviance - mod2$deviance
+1 - pchisq(delta_gsquare2, 1)
+# We can reject the null and say that the full model is useful since the full model is preferable over the model without the seasons
+
+#--------------------#
+# Check for Outliers #
+#--------------------#
+n <- nrow(train3)
+p <- 16
+COOKS<-cooks.distance(mod2)
+COOKS[COOKS>qf(0.5,p,n-p)] # None
+plot(mod2,which=5)
+
+DFFITS<-dffits(mod2)
+DFFITS[abs(DFFITS)>2*sqrt(p/n)]
+# COOKS shows no influential pts but DFFITS considers a lot of them as influential
+# suggests that maybe removal of individual data pt changes that individual pt a lot but collectively (vector-wise) the data pts don't change that much 
+
+DFBETAS<-dfbetas(mod2)
+abs(DFBETAS)>2/sqrt(n)
+DFBETAS[abs(DFBETAS[,1])>2/sqrt(n),1]
+
+#-------------------#
+# Assumption Checks #
+#-------------------#
+# logistic regression does not require a linear relationship between the dependent and independent variables but logistic regression assumes linearity of log odds with predictor coefficient but can't assess via plot with ungrouped data
+
+#---------------------------#
+# Examine Interaction Terms #
+#---------------------------#
+# season will have a potential interaction with view? View will influence price more in summer months
+# Renovated and age? Age's relationship with price will depend on whether it was renovated or not
+# sqft_living & sqft_lot & floor 
+mod3 <- glm(over_budget~.+season*view + 
+              renovated*age+
+              sqft_living*floors*sqft_lot,data=train3, family = 'binomial')
+options(width=120)
+summary(mod3) # only sqft_living:floors interaction sig
+
+mod4 <- glm(over_budget~.+sqft_living*floors,data=train3, family = 'binomial')
+summary(mod4)
+
+#--------------------------#
+# Check for co-linearity 3 #
+#--------------------------#
+vif(mod4)
+# VIF high among the variables part of the interaction term
+# See if including or excluding the interaction term helps the model
+# Automated search procedure only allows single order terms but you can artificially create an interaction column and use automated search procedure) 
+
+#--------------------------------#
+# Create interaction term column #
+#--------------------------------#
+train3$sqftflr <- train3$sqft_living*train3$floors
+
+#-----------------------------------------------------------------#
+# Exploratory Model Selection 3 (to compare interaction term fit) #
+#-----------------------------------------------------------------#
+# Create intercept only model
+regnull3 <- glm(over_budget~1, data=train3, family = 'binomial')
+# Create full model
+regfull3 <- glm(over_budget~.,data=train3, family = 'binomial')
+
+# Forward selection
+#step(regnull3, scope=list(lower=regnull3, upper=regfull3), direction = 'forward')
+#step(regfull3, scope=list(lower=regnull3, upper=regfull3), direction = 'backward')
+#allreg3 <- regsubsets(over_budget~., data = train3, nbest = 1)
+#summary(allreg3)
+
+# All variables included in automated search procedures
+
+#----------------------#
+# Check for Outliers 2 #
+#----------------------#
+n <- nrow(train3)
+p <- 17
+COOKS<-cooks.distance(mod4)
+COOKS[COOKS>qf(0.5,p,n-p)] # None
+plot(mod2,which=5)
+
+#-----------------------#
+# Logistic Regression 2 #
+#-----------------------#
+summary(mod4)
+# Wald test significant for all predictors -> cannot drop any predictors
+
+# Is the model useful -> likelihood ratio test
+# Compare null deviance (intercept only model) to residual deviance (full model)
+delta_gsquare = mod4$null.deviance - mod4$deviance
+1 - pchisq(delta_gsquare, 16)
+# We can reject the null and say that the full model is useful since the full model is preferable over the intercept-only model.
+
+# Full vs reduced models -> likelihood ratio test
+red_dat = train3[,-c(15)] # remove season
+mod_r <- glm(over_budget~., data = red_dat, family = "binomial")
+delta_gsquare2 <- mod_r$deviance - mod4$deviance
+1 - pchisq(delta_gsquare2, 1)
+# We can reject the null and say that the full model is useful since the full model is preferable over the model without the seasons
+
+#----------------#
+# Model Validity #
+#----------------#
+# Add in interaction term to test data
+test$sqftflr <- test$sqft_living*test$floors
+preds<-predict(mod4,newdata=test, type="response")
+rates<-prediction(preds, test$over_budget)
+##store the true positive and false positive rates
+roc_result<-performance(rates,measure="tpr", x.measure="fpr")
+plot(roc_result, main="ROC Curve for Over-Budget")
+lines(x = c(0,1), y = c(0,1), col="red")
+
+# Compute AUC
+auc<-performance(rates, measure = "auc")
+auc@y.values
+# 0.9675185
+
+# Generate confusion matrix
+table(test$over_budget, preds>0.5)
+# False Positive Rate: 
+FPR <- 110/(3393+110) # 0.03140166
+# True Positive Rate: 
+TPR <- 600/(600+221) # 0.6638246
+
+# Mark our model's predictive ability given our threshold & save as .png
+#png("ROC_final.png", 490, 350)
+plot(roc_result, main="ROC Curve for Over-Budget")
+lines(x = c(0,1), y = c(0,1), col="red")
+lines(x=FPR,y=TPR,col='blue',type='p',pch = 19,cex=2)
+#dev.off()
+
+```
+
+```{r 3.4, results='asis',echo=FALSE}
+SourceTable <- as.data.frame(as.data.frame(rbind(coef(summary(mod4)))),
+		row.names = c("Intercept","age","bedrooms",
+		              "bathrooms","sqft living",
+		              "sqft lot", "floors","conditions","grade",
+		              "sqft living 15","waterfront","view",
+		              "basement","renovated","season","distance","sqft living and floors"))
+names(SourceTable) <- c("Estimate","Std. Error","z-value","p-value")
+apa_table(SourceTable,caption = "Logistic model parameters",escape=FALSE, font_size = "footnotesize",digits=6) 
+```
+
